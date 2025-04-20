@@ -1,10 +1,21 @@
 from fastapi import FastAPI, Request
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 app = FastAPI()
+
+# 🔓 Allow CORS for local and production frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production: restrict to ["https://your-site.com"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 analyzer = SentimentIntensityAnalyzer()
-# Boost financial terms
+
+# Optional: Patch the lexicon for financial terms
 analyzer.lexicon.update({
     "soared": 3.0,
     "beat": 2.0,
@@ -22,13 +33,23 @@ analyzer.lexicon.update({
     "bleak": -2.8
 })
 
-class SentimentRequest(BaseModel):
-    text: str
-
 @app.post("/sentiment")
-def get_sentiment(payload: SentimentRequest):
-    scores = analyzer.polarity_scores(payload.text)
-    sentiment = "Positive" if scores["compound"] > 0.2 else "Negative" if scores["compound"] < -0.2 else "Neutral"
+async def analyze_sentiment(request: Request):
+    body = await request.json()
+    text = body.get("text")
+
+    if not text:
+        return {"error": "Missing 'text' field."}
+
+    scores = analyzer.polarity_scores(text)
+
+    # Determine sentiment label
+    sentiment = (
+        "positive" if scores["compound"] >= 0.05
+        else "negative" if scores["compound"] <= -0.05
+        else "neutral"
+    )
+
     return {
         "sentiment": sentiment,
         "compound": scores["compound"],
